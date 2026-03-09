@@ -1,0 +1,265 @@
+==================================================
+GITHUB ACTIONS CI/CD SETUP FOR NODE BACKEND (VPS)
+==================================================
+
+Goal
+Automatically deploy a Node.js backend to a VPS when code is pushed to GitHub.
+
+
+==================================================
+1. PREPARE SERVER (ONE-TIME SETUP)
+==================================================
+
+SSH into your server
+
+ssh <SERVER_USER>@<SERVER_IP>
+
+
+Install Node.js (if not already installed).
+
+
+Install PM2 globally
+
+npm install -g pm2
+
+
+Clone your backend repository
+
+git clone https://github.com/<USERNAME>/<REPOSITORY>.git
+cd <REPOSITORY>
+
+
+Install dependencies
+
+npm install
+
+
+Build the project
+
+npm run build
+
+
+Start the application with PM2
+
+pm2 start dist/index.js --name <APP_NAME>
+
+
+Save the PM2 process list
+
+pm2 save
+
+
+Server setup is now complete.
+
+
+==================================================
+2. GENERATE SSH KEY (LOCAL MACHINE)
+==================================================
+
+Run the following command on your local machine
+
+ssh-keygen -t ed25519 -C "github-actions"
+
+
+This creates two files:
+
+PRIVATE KEY
+
+~/.ssh/id_ed25519
+
+
+PUBLIC KEY
+
+~/.ssh/id_ed25519.pub
+
+
+==================================================
+3. ADD PUBLIC KEY TO SERVER
+==================================================
+
+Copy the public key
+
+cat ~/.ssh/id_ed25519.pub
+
+
+SSH into your server and open authorized_keys
+
+nano ~/.ssh/authorized_keys
+
+
+Paste the entire public key on a single line.
+
+
+Fix permissions
+
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys
+
+
+==================================================
+4. ADD GITHUB SECRETS
+==================================================
+
+Go to your GitHub repository:
+
+Settings → Secrets and variables → Actions
+
+
+Add the following secrets
+
+
+SERVER_HOST
+
+Value: <YOUR_SERVER_IP>
+
+
+SERVER_USER
+
+Value: <YOUR_LINUX_USERNAME>
+
+
+SSH_PRIVATE_KEY
+
+Value: contents of ~/.ssh/id_ed25519
+
+Include the full key with:
+
+-----BEGIN OPENSSH PRIVATE KEY-----
+...
+-----END OPENSSH PRIVATE KEY-----
+
+
+==================================================
+5. CREATE GITHUB ACTION WORKFLOW
+==================================================
+
+Create the workflow file
+
+.github/workflows/deploy.yml
+
+
+Paste the following configuration
+
+
+name: Deploy App
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+
+jobs:
+
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@v0.1.10
+
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+          script: |
+
+            cd <PROJECT_FOLDER>
+
+            if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+              git pull origin main
+            else
+              git pull origin dev
+            fi
+
+            npm install
+            npm run build
+
+            pm2 describe <APP_NAME> > /dev/null 2>&1 \
+              && pm2 reload <APP_NAME> \
+              || pm2 start dist/index.js --name <APP_NAME>
+
+            pm2 save
+
+
+==================================================
+6. PUSH CODE TO GITHUB
+==================================================
+
+Commit and push your changes
+
+git add .
+git commit -m "setup deploy"
+git push origin main
+
+
+GitHub Actions will automatically:
+
+• SSH into the server
+• Pull the latest code
+• Install dependencies
+• Build the project
+• Reload or start the PM2 process
+• Save the PM2 process list
+
+
+==================================================
+7. TROUBLESHOOTING
+==================================================
+
+SSH connection fails
+
+Check:
+
+• SERVER_USER value
+• SERVER_HOST value
+• Public key exists in ~/.ssh/authorized_keys
+• File permissions:
+
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/authorized_keys
+
+
+PM2 process not found
+
+• Ensure the application was started once manually
+• Ensure the process name matches exactly
+
+
+Build fails
+
+• SSH into the server
+• Run the same commands manually:
+
+npm install
+npm run build
+
+
+==================================================
+8. OPTIONAL IMPROVEMENTS
+==================================================
+
+Use separate servers for staging and production.
+
+Create a dedicated deploy user on the server.
+
+Run automated tests before deployment.
+
+Use:
+
+pm2 reload --update-env
+
+when environment variables change.
+
+Use an ecosystem.config.js file for advanced PM2 configurations.
+
+
+==================================================
+END OF GUIDE
+==================================================

@@ -1,0 +1,390 @@
+CLEAN ARCHITECTURE FEATURE IMPLEMENTATION GUIDE
+
+Feature Example: Articles
+
+Endpoints
+
+POST   /api/articles
+GET    /api/articles
+GET    /api/articles/{id}
+PUT    /api/articles/{id}
+DELETE /api/articles/{id}
+POST   /api/articles/{id}/publish
+
+
+RULE
+
+Always implement features in this order:
+
+1. Domain
+2. Infrastructure
+3. Application
+4. API
+
+Never start with controllers.
+
+
+--------------------------------------------------
+STEP 1 — DOMAIN
+--------------------------------------------------
+
+Location:
+src/Domain
+
+Create:
+
+1. Entity
+2. Enum (optional)
+3. Repository Interface
+
+
+ENTITY
+
+File:
+Domain/Entities/Article.cs
+
+Example structure:
+
+public class Article : BaseEntity
+{
+    public string Title { get; set; }
+    public string Content { get; set; }
+    public bool IsPublished { get; set; }
+}
+
+Note:
+BaseEntity usually provides:
+
+Id
+CreatedAt
+UpdatedAt
+
+
+ENUM (OPTIONAL)
+
+File:
+Domain/Enums/ArticleStatus.cs
+
+Example:
+
+public enum ArticleStatus
+{
+    Draft,
+    Published
+}
+
+
+REPOSITORY INTERFACE
+
+File:
+Domain/Interfaces/IArticleRepository.cs
+
+Extend the generic repository.
+
+Example structure:
+
+public interface IArticleRepository : IRepository<Article>
+{
+    Task<IEnumerable<Article>> GetPublishedAsync();
+}
+
+Reason:
+Generic repository already provides:
+
+GetById
+GetAll
+Add
+Update
+Delete
+Find
+
+Only add custom queries.
+
+
+--------------------------------------------------
+STEP 2 — INFRASTRUCTURE
+--------------------------------------------------
+
+Location:
+src/Infrastructure
+
+Create:
+
+Repository Implementation
+
+
+REPOSITORY IMPLEMENTATION
+
+File:
+Infrastructure/Repositories/ArticleRepository.cs
+
+Structure:
+
+public class ArticleRepository : MongoRepository<Article>, IArticleRepository
+{
+    public ArticleRepository(IMongoDatabase database) : base(database)
+    {
+    }
+
+    public async Task<IEnumerable<Article>> GetPublishedAsync()
+    {
+        return await _collection
+            .Find(x => x.IsPublished)
+            .ToListAsync();
+    }
+}
+
+
+REGISTER IN DEPENDENCY INJECTION
+
+File:
+Infrastructure/DependencyInjection.cs
+
+Add:
+
+services.AddScoped<IArticleRepository, ArticleRepository>();
+
+
+--------------------------------------------------
+STEP 3 — APPLICATION
+--------------------------------------------------
+
+Location:
+src/Application
+
+Create:
+
+1. DTOs
+2. Service Interface
+3. Service Implementation
+4. Validators (optional)
+5. Mapping
+
+
+DTOs
+
+Folder:
+Application/DTOs/Articles
+
+
+CreateArticleRequest
+
+public class CreateArticleRequest
+{
+    public string Title { get; set; }
+    public string Content { get; set; }
+}
+
+
+ArticleResponse
+
+public class ArticleResponse
+{
+    public string Id { get; set; }
+    public string Title { get; set; }
+    public string Content { get; set; }
+    public bool IsPublished { get; set; }
+}
+
+
+SERVICE INTERFACE
+
+File:
+Application/Interfaces/IArticleService.cs
+
+Structure:
+
+public interface IArticleService
+{
+    Task<ArticleResponse> CreateAsync(CreateArticleRequest request);
+    Task<IEnumerable<ArticleResponse>> GetAllAsync();
+    Task<ArticleResponse?> GetByIdAsync(string id);
+    Task PublishAsync(string id);
+}
+
+
+SERVICE IMPLEMENTATION
+
+File:
+Application/Services/ArticleService.cs
+
+Structure:
+
+public class ArticleService : IArticleService
+{
+    private readonly IArticleRepository _repository;
+
+    public ArticleService(IArticleRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public async Task<ArticleResponse> CreateAsync(CreateArticleRequest request)
+    {
+        Create Article entity
+
+        Save with repository
+
+        Map entity to ArticleResponse
+
+        Return response
+    }
+
+    public async Task<IEnumerable<ArticleResponse>> GetAllAsync()
+    {
+        Fetch all articles from repository
+
+        Map to ArticleResponse list
+
+        Return list
+    }
+
+    public async Task<ArticleResponse?> GetByIdAsync(string id)
+    {
+        Fetch article
+
+        If null return null
+
+        Map to response
+    }
+
+    public async Task PublishAsync(string id)
+    {
+        Fetch article
+
+        If null throw error
+
+        Set IsPublished = true
+
+        Update repository
+    }
+}
+
+
+--------------------------------------------------
+STEP 4 — API
+--------------------------------------------------
+
+Location:
+src/API/Controllers
+
+
+CONTROLLER
+
+File:
+ArticlesController.cs
+
+
+Structure:
+
+[ApiController]
+[Route("api/articles")]
+public class ArticlesController : ControllerBase
+{
+    private readonly IArticleService _service;
+
+    public ArticlesController(IArticleService service)
+    {
+        _service = service;
+    }
+
+    POST /api/articles
+    Calls CreateAsync
+
+    GET /api/articles
+    Calls GetAllAsync
+
+    GET /api/articles/{id}
+    Calls GetByIdAsync
+
+    POST /api/articles/{id}/publish
+    Calls PublishAsync
+}
+
+
+--------------------------------------------------
+PROJECT FILE STRUCTURE
+--------------------------------------------------
+
+Domain
+ ├─ Entities
+ │   └─ Article.cs
+ ├─ Interfaces
+ │   └─ IArticleRepository.cs
+
+Infrastructure
+ └─ Repositories
+     └─ ArticleRepository.cs
+
+Application
+ ├─ DTOs/Articles
+ │   ├─ CreateArticleRequest.cs
+ │   └─ ArticleResponse.cs
+ ├─ Interfaces
+ │   └─ IArticleService.cs
+ └─ Services
+     └─ ArticleService.cs
+
+API
+ └─ Controllers
+     └─ ArticlesController.cs
+
+
+--------------------------------------------------
+REQUEST FLOW
+--------------------------------------------------
+
+Client Request
+      ↓
+Controller
+      ↓
+Service
+      ↓
+Repository Interface
+      ↓
+Repository Implementation
+      ↓
+Database
+
+Response returns in reverse order.
+
+
+--------------------------------------------------
+MENTAL MODEL
+--------------------------------------------------
+
+For every new feature ask:
+
+1. Domain
+   - What is the entity?
+   - What repository interface is required?
+
+2. Infrastructure
+   - How is it stored?
+   - Repository implementation
+
+3. Application
+   - What use cases exist?
+   - DTOs
+   - Services
+   - Validators
+   - Mapping
+
+4. API
+   - How is it exposed?
+   - Controller
+
+
+--------------------------------------------------
+IMPLEMENTATION ORDER
+--------------------------------------------------
+
+Always implement in this exact order:
+
+1. Entity
+2. Repository Interface
+3. Repository Implementation
+4. DTOs
+5. Service Interface
+6. Service Implementation
+7. Controller

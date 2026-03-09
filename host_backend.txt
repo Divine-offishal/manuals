@@ -1,0 +1,357 @@
+==================================================
+GENERIC BACKEND HOSTING GUIDE
+==================================================
+
+Project: <YOUR_PROJECT_NAME>
+Domain/Subdomain: <YOUR_SUBDOMAIN> (example: pdf.jodnatechnologies.com)
+Server: Linux VPS (Ubuntu recommended)
+Stack: Node.js + TypeScript + PM2 + Nginx + WebSockets + Large uploads
+
+
+==================================================
+1. PREPARE SERVER
+==================================================
+
+SSH into VPS
+
+ssh <USER>@<VPS_IP>
+
+
+Update system packages
+
+sudo apt update
+sudo apt upgrade -y
+
+
+Install required software
+
+sudo apt install nginx nodejs npm git -y
+
+
+Install PM2 globally
+
+npm install -g pm2
+
+
+==================================================
+2. CLONE BACKEND REPOSITORY
+==================================================
+
+Generate a GitHub Personal Access Token
+
+Scope required:
+repo (read-only is sufficient)
+
+Example token:
+ghp_1AFb5EXAMPLETOKEN
+
+
+Clone repository using HTTPS + token
+
+cd ~
+
+git clone https://<TOKEN>@github.com/<USERNAME>/<REPO>.git <PROJECT_NAME>
+
+cd <PROJECT_NAME>
+
+
+Example
+
+git clone https://ghp_1AFb5EXAMPLETOKEN@github.com/jodna/pdf_project_backend.git pdf_project_backend
+
+cd pdf_project_backend
+
+
+==================================================
+3. CONFIGURE ENVIRONMENT VARIABLES
+==================================================
+
+Create environment file
+
+nano .env
+
+
+Example configuration
+
+PORT=5019
+BACKEND_URL=https://pdf.jodnatechnologies.com
+MONGO_URI=mongodb+srv://username:password@cluster0.mongodb.net/dbname?retryWrites=true&w=majority
+JWT_SECRET=<YOUR_SECRET>
+OTHER_API_KEYS=<ANY_KEYS>
+
+
+Notes
+
+PORT
+The port your backend will run on.
+
+Check if the port is available
+
+sudo lsof -i :<PORT>
+
+
+BACKEND_URL
+Your public domain or subdomain used by the backend for links and callbacks.
+
+
+Important
+
+Do NOT commit the .env file to GitHub.
+
+
+==================================================
+4. INSTALL DEPENDENCIES AND BUILD
+==================================================
+
+Install project dependencies
+
+npm install
+
+
+Build TypeScript project
+
+npm run build
+
+
+==================================================
+5. START BACKEND WITH PM2
+==================================================
+
+Start application
+
+pm2 start npm --name <PROJECT_NAME> -- start
+
+
+Save PM2 process list
+
+pm2 save
+
+
+View running applications
+
+pm2 list
+
+
+View application logs
+
+pm2 logs <PROJECT_NAME>
+
+
+==================================================
+6. CONFIGURE NGINX (HTTP SETUP)
+==================================================
+
+Remove default Nginx site
+
+sudo rm /etc/nginx/sites-enabled/default
+
+
+Create new Nginx configuration
+
+sudo nano /etc/nginx/sites-available/<PROJECT_NAME>
+
+
+Paste configuration
+
+server {
+
+    listen 80;
+    server_name <YOUR_SUBDOMAIN>;
+
+    client_max_body_size 250M;
+
+    location / {
+
+        proxy_pass http://localhost:<PORT>;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+
+        proxy_set_header Host $host;
+
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+
+Enable the site
+
+sudo ln -s /etc/nginx/sites-available/<PROJECT_NAME> /etc/nginx/sites-enabled/
+
+
+Test configuration
+
+sudo nginx -t
+
+
+Reload Nginx
+
+sudo systemctl reload nginx
+
+
+==================================================
+7. CONFIGURE DNS
+==================================================
+
+Add DNS record in domain registrar or DNS provider.
+
+Record Type
+
+A (IPv4) or AAAA (IPv6)
+
+
+Host
+
+<YOUR_SUBDOMAIN>
+
+Example
+
+pdf
+
+
+Value
+
+<VPS_IP>
+
+
+TTL
+
+14400 (4 hours default)
+
+
+Verify DNS propagation
+
+ping <YOUR_SUBDOMAIN>
+
+nslookup <YOUR_SUBDOMAIN>
+
+
+==================================================
+8. ENABLE HTTPS (CERTBOT)
+==================================================
+
+Install Certbot
+
+sudo apt install certbot python3-certbot-nginx -y
+
+
+Request SSL certificate
+
+sudo certbot --nginx -d <YOUR_SUBDOMAIN>
+
+
+Follow prompts
+
+Enter email
+Accept terms
+Enable HTTP → HTTPS redirect (recommended)
+
+
+Verify HTTPS
+
+https://<YOUR_SUBDOMAIN>
+
+
+Test SSL auto-renewal
+
+sudo certbot renew --dry-run
+
+
+Certbot will automatically configure the HTTPS server block.
+
+
+==================================================
+9. TEST DEPLOYMENT
+==================================================
+
+Check application logs
+
+pm2 logs <PROJECT_NAME>
+
+
+Test HTTP → HTTPS redirect
+
+http://<YOUR_SUBDOMAIN>
+
+should redirect to
+
+https://<YOUR_SUBDOMAIN>
+
+
+Test WebSocket connections
+
+wss://<YOUR_SUBDOMAIN>
+
+
+Test large file uploads
+
+Example: ~200MB upload
+
+
+==================================================
+10. PM2 MANAGEMENT COMMANDS
+==================================================
+
+Restart application
+
+pm2 restart <PROJECT_NAME>
+
+
+View logs
+
+pm2 logs <PROJECT_NAME>
+
+
+Save process list
+
+pm2 save
+
+
+Enable startup on server reboot
+
+pm2 startup
+pm2 save
+
+
+==================================================
+11. IMPORTANT NOTES
+==================================================
+
+PORT must match:
+
+• .env configuration
+• Nginx proxy_pass port
+
+
+BACKEND_URL must match the public domain.
+
+
+All secrets and API keys should be stored in the .env file.
+
+
+Nginx configuration supports:
+
+• WebSockets
+• Large file uploads
+
+
+SSL certificates automatically renew every 90 days.
+
+
+Always check port conflicts before selecting a PORT.
+
+sudo lsof -i :<PORT>
+
+
+==================================================
+END OF GENERIC BACKEND HOSTING GUIDE
+==================================================
