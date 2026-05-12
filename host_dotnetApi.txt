@@ -1,0 +1,284 @@
+==================================================
+DOTNET VPS DEPLOYMENT GUIDE (NGINX + SYSTEMD + MONGODB)
+==================================================
+
+Project: NextorBackend (or any .NET Web API)
+Server: Ubuntu VPS
+Stack: .NET Web API + MongoDB + Nginx + Certbot + systemd
+
+
+==================================================
+1. SERVER SETUP (FIRST TIME ONLY)
+==================================================
+
+SSH into server:
+
+ssh user@server-ip
+
+
+Update system:
+
+sudo apt update && sudo apt upgrade -y
+
+
+Install required packages:
+
+sudo apt install nginx git curl -y
+
+
+Install .NET runtime (MATCH YOUR PROJECT VERSION):
+
+Example (.NET 8):
+sudo apt install dotnet-runtime-8.0 -y
+
+
+Verify:
+
+dotnet --info
+
+
+==================================================
+2. CLONE PROJECT
+==================================================
+
+cd ~
+git clone https://github.com/<username>/<repo>.git
+cd <repo>
+
+
+==================================================
+3. CONFIGURATION FILES (IMPORTANT)
+==================================================
+
+Your app uses:
+
+appsettings.json
+appsettings.Production.json
+
+
+IMPORTANT:
+Do NOT commit secrets file.
+
+Add to .gitignore:
+
+appsettings.Production.json
+
+
+Example Production config:
+
+{
+  "MongoDb": {
+    "ConnectionString": "mongodb+srv://...",
+    "DatabaseName": "YourDb"
+  },
+  "Jwt": {
+    "Key": "secret",
+    "Issuer": "api",
+    "Audience": "users"
+  }
+}
+
+
+==================================================
+4. BUILD & PUBLISH (IMPORTANT)
+==================================================
+
+Always publish the correct project explicitly:
+
+dotnet publish NextorBackend.csproj -c Release -o publish
+
+
+Output:
+
+/publish folder contains NextorBackend.dll
+
+
+==================================================
+5. RUNNING WITH SYSTEMD (PRODUCTION STANDARD)
+==================================================
+
+Create service:
+
+sudo nano /etc/systemd/system/NextorBackend.service
+
+
+Example:
+
+[Unit]
+Description=NextorBackend
+After=network.target
+
+[Service]
+WorkingDirectory=/home/user/repo/publish
+
+ExecStart=/usr/bin/dotnet /home/user/repo/publish/NextorBackend.dll
+
+Restart=always
+RestartSec=10
+
+User=user
+
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://localhost:5031
+
+[Install]
+WantedBy=multi-user.target
+
+
+Enable service:
+
+sudo systemctl daemon-reload
+sudo systemctl enable NextorBackend
+sudo systemctl start NextorBackend
+
+
+Check status:
+
+sudo systemctl status NextorBackend
+
+
+View logs:
+
+journalctl -u NextorBackend -f
+
+
+==================================================
+6. NGINX CONFIGURATION (REVERSE PROXY)
+==================================================
+
+Create config:
+
+sudo nano /etc/nginx/sites-available/NextorBackend
+
+
+Example:
+
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:5031;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+
+Enable site:
+
+sudo ln -s /etc/nginx/sites-available/NextorBackend /etc/nginx/sites-enabled/
+
+Test:
+
+sudo nginx -t
+
+Reload:
+
+sudo systemctl reload nginx
+
+
+==================================================
+7. HTTPS (CERTBOT SSL)
+==================================================
+
+Install Certbot:
+
+sudo apt install certbot python3-certbot-nginx -y
+
+
+Generate SSL:
+
+sudo certbot --nginx -d your-domain.com
+
+
+Test renewal:
+
+sudo certbot renew --dry-run
+
+
+==================================================
+8. MONGODB CHECKLIST
+==================================================
+
+Ensure:
+
+✔ Correct connection string in appsettings.Production.json
+✔ MongoDB Atlas allows VPS IP (or 0.0.0.0/0 for testing)
+✔ Database name matches config
+✔ No firewall blocking outbound MongoDB access
+
+
+Test via logs:
+
+journalctl -u NextorBackend -f
+
+
+Optional health endpoint:
+
+GET /health/db → returns "MongoDB connected"
+
+
+==================================================
+9. DEPLOYMENT UPDATE FLOW
+==================================================
+
+Every code change:
+
+git pull
+dotnet publish NextorBackend.csproj -c Release -o publish
+sudo systemctl restart NextorBackend
+
+
+Shortcut:
+
+git pull && dotnet publish NextorBackend.csproj -c Release -o publish && sudo systemctl restart NextorBackend
+
+
+==================================================
+10. TROUBLESHOOTING
+==================================================
+
+APP NOT STARTING:
+journalctl -u NextorBackend -f
+
+PORT IN USE:
+sudo lsof -i :5031
+sudo kill -9 <PID>
+
+404 ON DOMAIN:
+- check nginx proxy_pass
+- ensure backend is running
+
+SWAGGER NOT WORKING:
+- ensure Program.cs has:
+  app.UseSwagger();
+  app.UseSwaggerUI();
+
+- ensure not restricted to Development only
+
+MONGODB NOT CONNECTING:
+- check appsettings.Production.json
+- check Atlas IP whitelist
+- check logs for connection errors
+
+
+==================================================
+11. IMPORTANT RULES
+==================================================
+
+✔ Always publish before restart
+✔ Always use NextorBackend.csproj explicitly
+✔ Never expose backend port publicly (use Nginx only)
+✔ Only expose ports 80/443
+✔ Keep secrets out of GitHub
+✔ Use systemd (NOT manual dotnet run in production)
+
+
+==================================================
+END OF GUIDE
+==================================================
